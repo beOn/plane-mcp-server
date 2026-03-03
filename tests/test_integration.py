@@ -176,11 +176,28 @@ EXPECTED_TOOLS = [
     "retrieve_state",
     "update_state",
     "delete_state",
-    # Page tools
+    # Page tools (fork-extended)
+    "list_workspace_pages",
     "retrieve_workspace_page",
-    "retrieve_project_page",
     "create_workspace_page",
+    "update_workspace_page",
+    "archive_workspace_page",
+    "list_workspace_page_children",
+    "list_project_pages",
+    "retrieve_project_page",
     "create_project_page",
+    "update_project_page",
+    "list_project_page_children",
+    # Email tools (fork-only)
+    "search_email_references",
+    "get_email_reference",
+    "list_issue_linked_emails",
+    "link_email_to_issue",
+    "unlink_email_from_issue",
+    "list_issue_linked_pages",
+    # Template tools (fork-only)
+    "list_issue_templates",
+    "get_issue_template",
     # Work item activity tools
     "list_work_item_activities",
     "retrieve_work_item_activity",
