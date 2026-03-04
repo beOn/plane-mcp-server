@@ -231,7 +231,7 @@ def register_work_item_tools(mcp: FastMCP) -> None:
 
         return fork_request(
             "GET",
-            f"workspaces/{workspace_slug}/projects/{project_identifier}/work-items/{issue_identifier}",
+            f"workspaces/{workspace_slug}/work-items/{project_identifier}-{issue_identifier}",
             params=params,
         )
 
