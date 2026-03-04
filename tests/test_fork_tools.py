@@ -145,6 +145,66 @@ def test_email_reference_detail():
     assert "to_addresses" in detail
 
 
+def test_list_issue_types():
+    """List issue types — should return a list."""
+    from plane_mcp.fork_api import fork_request
+
+    ws = os.environ["PLANE_WORKSPACE_SLUG"]
+    result = fork_request("GET", f"workspaces/{ws}/issue-types")
+    assert isinstance(result, list)
+    if result:
+        item = result[0]
+        assert "id" in item
+        assert "name" in item
+        assert "is_active" in item
+
+
+def test_issue_type_lifecycle():
+    """Create → retrieve → update → soft-delete an issue type."""
+    from plane_mcp.fork_api import fork_request
+
+    ws = os.environ["PLANE_WORKSPACE_SLUG"]
+
+    # Create
+    issue_type = fork_request(
+        "POST",
+        f"workspaces/{ws}/issue-types",
+        json={"name": "MCP Smoke Test Type"},
+    )
+    assert issue_type["name"] == "MCP Smoke Test Type"
+    type_id = issue_type["id"]
+
+    try:
+        # Retrieve
+        detail = fork_request("GET", f"workspaces/{ws}/issue-types/{type_id}")
+        assert detail["id"] == type_id
+        assert detail["name"] == "MCP Smoke Test Type"
+
+        # Update
+        updated = fork_request(
+            "PATCH",
+            f"workspaces/{ws}/issue-types/{type_id}",
+            json={"name": "MCP Smoke Test Type (Updated)"},
+        )
+        assert updated["name"] == "MCP Smoke Test Type (Updated)"
+
+        # Soft-delete
+        fork_request("DELETE", f"workspaces/{ws}/issue-types/{type_id}")
+
+        # Verify it's gone from active list
+        types = fork_request("GET", f"workspaces/{ws}/issue-types")
+        active_ids = [t["id"] for t in types]
+        assert type_id not in active_ids
+
+    except Exception:
+        # Cleanup: soft-delete if something failed mid-test
+        try:
+            fork_request("DELETE", f"workspaces/{ws}/issue-types/{type_id}")
+        except Exception:
+            pass
+        raise
+
+
 def test_list_issue_templates():
     """List issue templates — should return a list with lite shape."""
     from plane_mcp.fork_api import fork_request
