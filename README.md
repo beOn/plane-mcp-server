@@ -1,290 +1,174 @@
-# Plane MCP Server
+# Intervan Plane MCP Server
 
-A Model Context Protocol (MCP) server for Plane integration. This server provides tools and resources for interacting with Plane through AI agents.
+MCP (Model Context Protocol) server for Intervan's self-hosted Plane instance. Gives AI tools (Claude Code, Cursor, etc.) direct access to work items, wiki pages, email references, and issue templates.
 
-## Features
+Forked from [makeplane/plane-mcp-server](https://github.com/makeplane/plane-mcp-server) with extensions for our custom Plane fork features.
 
-* 🔧 **Plane Integration**: Interact with Plane APIs and services
-* 🔌 **Multiple Transports**: Supports stdio, SSE, and streamable HTTP transports
-* 🌐 **Remote & Local**: Works both locally and as a remote service
-* 🛠️ **Extensible**: Easy to add new tools and resources
+## Quick Start
 
-## Usage
+### Prerequisites
 
-The server supports three transport methods. **We recommend using `uvx`** as it doesn't require installation.
+- Python 3.11+ (check with `python3 --version`)
+- [uv](https://docs.astral.sh/uv/) package manager (`brew install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- A Plane API key (get one from God-mode or ask Ben)
 
-### 1. Stdio Transport (for local use)
+### 1. Clone and install
 
-**MCP Client Configuration** (using uvx - recommended):
-
-```json
-{
-  "mcpServers": {
-    "plane": {
-      "command": "uvx",
-      "args": ["plane-mcp-server", "stdio"],
-      "env": {
-        "PLANE_API_KEY": "<your-api-key>",
-        "PLANE_WORKSPACE_SLUG": "<your-workspace-slug>",
-        "PLANE_BASE_URL": "https://api.plane.so"
-      }
-    }
-  }
-}
-```
-
-### 2. Remote HTTP Transport with OAuth
-
-Connect to the hosted Plane MCP server using OAuth authentication.
-
-**URL**: `https://mcp.plane.so/http/mcp`
-
-**MCP Client Configuration** (for tools like Claude Desktop without native remote MCP support):
-
-```json
-{
-  "mcpServers": {
-    "plane": {
-      "command": "npx",
-      "args": ["mcp-remote@latest", "https://mcp.plane.so/http/mcp"]
-    }
-  }
-}
-```
-
-**Note**: OAuth authentication will be handled automatically when connecting to the remote server.
-
-### 3. Remote HTTP Transport using PAT Token
-
-Connect to the hosted Plane MCP server using a Personal Access Token (PAT).
-
-**URL**: `https://mcp.plane.so/api-key/mcp`
-
-**Headers**:
-- `Authorization: Bearer <PAT_TOKEN>`
-- `X-Workspace-slug: <SLUG>`
-
-**MCP Client Configuration** (for tools like Claude Desktop without native remote MCP support):
-
-```json
-{
-  "mcpServers": {
-    "plane": {
-      "command": "npx",
-      "args": ["mcp-remote@latest", "https://mcp.plane.so/http/api-key/mcp"],
-      "headers": {
-        "Authorization": "Bearer <PAT_TOKEN>",
-        "X-Workspace-slug": "<SLUG>"
-      }
-    }
-  }
-}
-```
-
-### 4. SSE Transport (Legacy)
-
-⚠️ **Legacy Transport**: SSE (Server-Sent Events) transport is maintained for backward compatibility. New implementations should use the HTTP transport (sections 2 or 3) instead.
-
-Connect to the hosted Plane MCP server using OAuth authentication via Server-Sent Events.
-
-**URL**: `https://mcp.plane.so/sse`
-
-**MCP Client Configuration** (for tools that support SSE transport):
-
-```json
-{
-  "mcpServers": {
-    "plane": {
-      "command": "npx",
-      "args": ["mcp-remote@latest", "https://mcp.plane.so/sse"]
-    }
-  }
-}
-```
-
-**Note**: OAuth authentication will be handled automatically when connecting to the remote server. This transport is deprecated in favor of the HTTP transport.
-
-
-## Configuration
-
-### Authentication
-
-The server requires authentication via environment variables:
-
-- `PLANE_BASE_URL`: Base URL for Plane API (default: `https://api.plane.so`) - Optional
-- `PLANE_API_KEY`: API key for authentication (required for stdio transport)
-- `PLANE_WORKSPACE_SLUG`: Workspace slug identifier (required for stdio transport)
-- `PLANE_ACCESS_TOKEN`: Access token for authentication (alternative to API key)
-
-**Example** (for stdio transport):
 ```bash
-export PLANE_BASE_URL="https://api.plane.so"
-export PLANE_API_KEY="your-api-key"
-export PLANE_WORKSPACE_SLUG="your-workspace-slug"
+git clone git@github.com:intervan/plane-mcp-server.git
+cd plane-mcp-server
+uv sync
 ```
 
-**Note**: For remote HTTP transports (OAuth or PAT), authentication is handled via the connection method (OAuth flow or PAT headers) and does not require these environment variables.
+### 2. Store your API key
+
+On macOS, store it in Keychain so it's not in plain text:
+
+```bash
+security add-generic-password -a "plane-api-key" -s "intervan-plane" -w "YOUR_API_KEY_HERE"
+```
+
+On Linux, use a `.env` file (keep it out of git):
+
+```bash
+echo 'PLANE_API_KEY=your_key_here' > .env
+```
+
+### 3. Add to your AI tool
+
+**Claude Code** — add to your project's `.claude/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "plane": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "PLANE_API_KEY=$(security find-generic-password -a plane-api-key -s intervan-plane -w) PLANE_WORKSPACE_SLUG=intervan PLANE_BASE_URL=https://ividemo.benacland.com uv run --directory /path/to/plane-mcp-server python -m plane_mcp stdio"
+      ]
+    }
+  }
+}
+```
+
+Replace `/path/to/plane-mcp-server` with the actual path to your clone.
+
+**Cursor** — add to `.cursor/mcp.json` with the same config.
+
+### 4. Verify it works
+
+Start a new Claude Code or Cursor session. You should see `plane` tools available. Try:
+
+```
+> List all work items in the EDI Support project
+```
+
+The project ID for EDI Support is `8c5e9fe5-2203-4dbc-93d4-5108acc09d3d`.
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PLANE_API_KEY` | Yes | API key for authentication |
+| `PLANE_WORKSPACE_SLUG` | Yes | Workspace slug (ours is `intervan`) |
+| `PLANE_BASE_URL` | Yes | Base URL of the Plane instance (`https://ividemo.benacland.com`) |
 
 ## Available Tools
 
-The server provides comprehensive tools for interacting with Plane. All tools use Pydantic models from the Plane SDK for type safety and validation.
+### Work Items (7 tools)
 
-### Projects
+| Tool | Description |
+|------|-------------|
+| `list_work_items` | List work items in a project (with pagination, filtering, expansion) |
+| `create_work_item` | Create a new work item |
+| `retrieve_work_item` | Get a work item by UUID |
+| `retrieve_work_item_by_identifier` | Get a work item by project+sequence (e.g., EDI-73) |
+| `update_work_item` | Update any field on a work item |
+| `delete_work_item` | Delete a work item |
+| `search_work_items` | Free-text search across work item names and descriptions |
 
-| Tool Name | Description |
-|-----------|-------------|
-| `list_projects` | List all projects in a workspace with optional pagination and filtering |
-| `create_project` | Create a new project with name, identifier, and optional configuration |
-| `retrieve_project` | Retrieve a project by ID |
-| `update_project` | Update a project with partial data |
-| `delete_project` | Delete a project by ID |
-| `get_project_worklog_summary` | Get work log summary for a project |
-| `get_project_members` | Get all members of a project |
-| `get_project_features` | Get features configuration of a project |
-| `update_project_features` | Update features configuration of a project |
+### Pages (12 tools)
 
-### Work Items
+| Tool | Description |
+|------|-------------|
+| `list_workspace_pages` | List top-level workspace (wiki) pages |
+| `create_workspace_page` | Create a workspace page (with optional parent for nesting) |
+| `retrieve_workspace_page` | Get a workspace page with full HTML content |
+| `update_workspace_page` | Update a workspace page's name, content, or parent |
+| `archive_workspace_page` | Archive a workspace page and its children |
+| `list_workspace_page_children` | List child pages of a workspace page |
+| `list_project_pages` | List pages in a project |
+| `create_project_page` | Create a page within a project |
+| `retrieve_project_page` | Get a project page with full content |
+| `update_project_page` | Update a project page |
+| `archive_project_page` | Archive a project page |
+| `list_project_page_children` | List child pages of a project page |
 
-| Tool Name | Description |
-|-----------|-------------|
-| `list_work_items` | List all work items in a project with optional filtering and pagination |
-| `create_work_item` | Create a new work item with name, assignees, labels, and other attributes |
-| `retrieve_work_item` | Retrieve a work item by ID with optional field expansion |
-| `retrieve_work_item_by_identifier` | Retrieve a work item by project identifier and issue sequence number |
-| `update_work_item` | Update a work item with partial data |
-| `delete_work_item` | Delete a work item by ID |
-| `search_work_items` | Search work items across a workspace with query string |
+### Email References (5 tools)
 
-### Cycles
+| Tool | Description |
+|------|-------------|
+| `search_email_references` | Search indexed emails by subject, sender, or folder |
+| `get_email_reference` | Get full email details (body, headers, etc.) |
+| `list_issue_linked_emails` | List emails linked to a work item |
+| `link_email_to_issue` | Link an email reference to a work item |
+| `unlink_email_from_issue` | Remove an email link from a work item |
 
-| Tool Name | Description |
-|-----------|-------------|
-| `list_cycles` | List all cycles in a project |
-| `create_cycle` | Create a new cycle with name, dates, and owner |
-| `retrieve_cycle` | Retrieve a cycle by ID |
-| `update_cycle` | Update a cycle with partial data |
-| `delete_cycle` | Delete a cycle by ID |
-| `list_archived_cycles` | List archived cycles in a project |
-| `add_work_items_to_cycle` | Add work items to a cycle |
-| `remove_work_item_from_cycle` | Remove a work item from a cycle |
-| `list_cycle_work_items` | List work items in a cycle |
-| `transfer_cycle_work_items` | Transfer work items from one cycle to another |
-| `archive_cycle` | Archive a cycle |
-| `unarchive_cycle` | Unarchive a cycle |
+### Issue Templates (2 tools)
 
-### Modules
+| Tool | Description |
+|------|-------------|
+| `list_issue_templates` | List available issue templates |
+| `get_issue_template` | Get full template details |
 
-| Tool Name | Description |
-|-----------|-------------|
-| `list_modules` | List all modules in a project |
-| `create_module` | Create a new module with name, dates, status, and members |
-| `retrieve_module` | Retrieve a module by ID |
-| `update_module` | Update a module with partial data |
-| `delete_module` | Delete a module by ID |
-| `list_archived_modules` | List archived modules in a project |
-| `add_work_items_to_module` | Add work items to a module |
-| `remove_work_item_from_module` | Remove a work item from a module |
-| `list_module_work_items` | List work items in a module |
-| `archive_module` | Archive a module |
-| `unarchive_module` | Unarchive a module |
+### Upstream Tools (~55 tools)
 
-### Initiatives
+All standard Plane MCP tools are also available: projects, cycles, modules, initiatives, labels, states, work item types/properties/comments/links/relations, users, and more.
 
-| Tool Name | Description |
-|-----------|-------------|
-| `list_initiatives` | List all initiatives in a workspace |
-| `create_initiative` | Create a new initiative with name, dates, state, and lead |
-| `retrieve_initiative` | Retrieve an initiative by ID |
-| `update_initiative` | Update an initiative with partial data |
-| `delete_initiative` | Delete an initiative by ID |
+**Total: ~80 tools**
 
-### Intake Work Items
+## Our Plane Instance
 
-| Tool Name | Description |
-|-----------|-------------|
-| `list_intake_work_items` | List all intake work items in a project with optional pagination |
-| `create_intake_work_item` | Create a new intake work item in a project |
-| `retrieve_intake_work_item` | Retrieve an intake work item by work item ID with optional field expansion |
-| `update_intake_work_item` | Update an intake work item with partial data |
-| `delete_intake_work_item` | Delete an intake work item by work item ID |
-
-### Work Item Properties
-
-| Tool Name | Description |
-|-----------|-------------|
-| `list_work_item_properties` | List work item properties for a work item type |
-| `create_work_item_property` | Create a new work item property with type, settings, and validation rules |
-| `retrieve_work_item_property` | Retrieve a work item property by ID |
-| `update_work_item_property` | Update a work item property with partial data |
-| `delete_work_item_property` | Delete a work item property by ID |
-
-### Users
-
-| Tool Name | Description |
-|-----------|-------------|
-| `get_me` | Get current authenticated user information |
-
-**Total Tools**: 55+ tools across 8 categories
+| Item | Value |
+|------|-------|
+| URL | https://ividemo.benacland.com |
+| Workspace | `intervan` |
+| Project | EDI Support (`8c5e9fe5-2203-4dbc-93d4-5108acc09d3d`) |
+| Wiki | Workspace Pages (Knowledge Base, Partner Profiles, Reference, Procedures) |
+| Emails | ~4,840 indexed from Ben's inbox |
 
 ## Development
 
-### Running Tests
+### Running tests
 
 ```bash
-pytest
+# Fork-specific smoke tests (requires live Plane instance)
+PLANE_API_KEY=your_key PLANE_WORKSPACE_SLUG=intervan PLANE_BASE_URL=https://ividemo.benacland.com \
+  uv run pytest tests/test_fork_tools.py -v
+
+# All tests
+PLANE_API_KEY=your_key PLANE_WORKSPACE_SLUG=intervan PLANE_BASE_URL=https://ividemo.benacland.com \
+  uv run pytest tests/ -v
 ```
 
-### Code Formatting
+### Project structure
 
-```bash
-black plane_mcp/
-ruff check plane_mcp/
 ```
+plane_mcp/
+  fork_api.py          # HTTP helper for custom /api/v1/ endpoints
+  tools/
+    work_items.py      # Work item CRUD + search (uses fork_api for reliability)
+    pages.py           # Workspace + project page tools (fork addition)
+    emails.py          # Email reference + linking tools (fork addition)
+    templates.py       # Issue template tools (fork addition)
+    ...                # Upstream tools (cycles, modules, labels, etc.)
+```
+
+### Why fork_api.py?
+
+The upstream Plane SDK's pydantic models are strict about response shapes — for example, `WorkItemDetail.labels` expects Label objects but the API returns UUID strings when fields aren't expanded. Our `fork_request()` helper makes direct HTTP calls and returns raw dicts, avoiding these validation mismatches entirely.
 
 ## License
 
-MIT License - see LICENSE for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Deprecation Notice
-
-⚠️ **The Node.js-based `plane-mcp-server` is deprecated and no longer maintained.**
-
-This repository represents the new Python+FastMCP based implementation of the Plane MCP server. If you were using the previous Node.js version, please migrate to this Python-based version for continued support and updates.
-
-The new implementation offers:
-- Better type safety with Pydantic models
-- Improved performance with FastMCP
-- Enhanced tool coverage
-- Active maintenance and development
-
-For migration assistance, please refer to the configuration examples in this README or open an issue for support.
-
-**Old Node.js Configuration (Deprecated):**
-
-If you were using the previous Node.js-based `@makeplane/plane-mcp-server`, your configuration looked like this:
-
-```json
-{
-  "mcpServers": {
-    "plane": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@makeplane/plane-mcp-server"
-      ],
-      "env": {
-        "PLANE_API_KEY": "<YOUR_API_KEY>",
-        "PLANE_API_HOST_URL": "<HOST_URL_FOR_SELF_HOSTED>",
-        "PLANE_WORKSPACE_SLUG": "<YOUR_WORKSPACE_SLUG>"
-      }
-    }
-  }
-}
-```
-
-**Please migrate to the new Python-based configuration shown in the Usage section above.**
-
+MIT (same as upstream)

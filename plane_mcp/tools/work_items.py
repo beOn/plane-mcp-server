@@ -1,20 +1,15 @@
-"""Work item-related tools for Plane MCP Server."""
+"""Work item-related tools for Plane MCP Server.
 
-from typing import get_args
+All tools use fork_request() for HTTP calls, bypassing the upstream SDK's
+pydantic models which are too strict (e.g., WorkItemDetail.labels expects
+Label dicts but the API returns UUID strings; PaginatedWorkItemResponse
+rejects expanded state dicts). Returns raw dicts for maximum compatibility.
+"""
 
 from fastmcp import FastMCP
-from plane.models.enums import PriorityEnum
-from plane.models.query_params import RetrieveQueryParams, WorkItemQueryParams
-from plane.models.work_items import (
-    CreateWorkItem,
-    PaginatedWorkItemResponse,
-    UpdateWorkItem,
-    WorkItem,
-    WorkItemDetail,
-    WorkItemSearch,
-)
 
 from plane_mcp.client import get_plane_client_context
+from plane_mcp.fork_api import fork_request
 
 
 def register_work_item_tools(mcp: FastMCP) -> None:
@@ -30,7 +25,7 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         order_by: str | None = None,
         external_id: str | None = None,
         external_source: str | None = None,
-    ) -> list[WorkItem]:
+    ) -> list[dict]:
         """
         List all work items in a project.
 
@@ -46,27 +41,37 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             external_source: External system source name for filtering or lookup
 
         Returns:
-            List of WorkItem objects
+            List of work item dicts
         """
-        client, workspace_slug = get_plane_client_context()
+        _, workspace_slug = get_plane_client_context()
 
-        params = WorkItemQueryParams(
-            cursor=cursor,
-            per_page=per_page,
-            expand=expand,
-            fields=fields,
-            order_by=order_by,
-            external_id=external_id,
-            external_source=external_source,
-        )
+        params: dict = {}
+        if cursor:
+            params["cursor"] = cursor
+        if per_page:
+            params["per_page"] = per_page
+        if expand:
+            params["expand"] = expand
+        if fields:
+            params["fields"] = fields
+        if order_by:
+            params["order_by"] = order_by
+        if external_id:
+            params["external_id"] = external_id
+        if external_source:
+            params["external_source"] = external_source
 
-        response: PaginatedWorkItemResponse = client.work_items.list(
-            workspace_slug=workspace_slug,
-            project_id=project_id,
+        response = fork_request(
+            "GET",
+            f"workspaces/{workspace_slug}/projects/{project_id}/work-items",
             params=params,
         )
 
-        return response.results
+        if isinstance(response, dict) and "results" in response:
+            return response["results"]
+        if isinstance(response, list):
+            return response
+        return []
 
     @mcp.tool()
     def create_work_item(
@@ -89,7 +94,7 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         state: str | None = None,
         estimate_point: str | None = None,
         type: str | None = None,
-    ) -> WorkItem:
+    ) -> dict:
         """
         Create a new work item.
 
@@ -116,38 +121,50 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             type: Work item type identifier
 
         Returns:
-            Created WorkItem object
+            Created work item dict
         """
-        client, workspace_slug = get_plane_client_context()
+        _, workspace_slug = get_plane_client_context()
 
-        # Validate priority against allowed literal values
-        validated_priority: PriorityEnum | None = (
-            priority if priority in get_args(PriorityEnum) else None  # type: ignore[assignment]
-        )
+        body: dict = {"name": name}
+        if assignees is not None:
+            body["assignees"] = assignees
+        if labels is not None:
+            body["labels"] = labels
+        if type_id is not None:
+            body["type_id"] = type_id
+        if point is not None:
+            body["point"] = point
+        if description_html is not None:
+            body["description_html"] = description_html
+        if description_stripped is not None:
+            body["description_stripped"] = description_stripped
+        if priority is not None:
+            body["priority"] = priority
+        if start_date is not None:
+            body["start_date"] = start_date
+        if target_date is not None:
+            body["target_date"] = target_date
+        if sort_order is not None:
+            body["sort_order"] = sort_order
+        if is_draft is not None:
+            body["is_draft"] = is_draft
+        if external_source is not None:
+            body["external_source"] = external_source
+        if external_id is not None:
+            body["external_id"] = external_id
+        if parent is not None:
+            body["parent"] = parent
+        if state is not None:
+            body["state"] = state
+        if estimate_point is not None:
+            body["estimate_point"] = estimate_point
+        if type is not None:
+            body["type"] = type
 
-        data = CreateWorkItem(
-            name=name,
-            assignees=assignees,
-            labels=labels,
-            type_id=type_id,
-            point=point,
-            description_html=description_html,
-            description_stripped=description_stripped,
-            priority=validated_priority,
-            start_date=start_date,
-            target_date=target_date,
-            sort_order=sort_order,
-            is_draft=is_draft,
-            external_source=external_source,
-            external_id=external_id,
-            parent=parent,
-            state=state,
-            estimate_point=estimate_point,
-            type=type,
-        )
-
-        return client.work_items.create(
-            workspace_slug=workspace_slug, project_id=project_id, data=data
+        return fork_request(
+            "POST",
+            f"workspaces/{workspace_slug}/projects/{project_id}/work-items",
+            json=body,
         )
 
     @mcp.tool()
@@ -156,10 +173,7 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         work_item_id: str,
         expand: str | None = None,
         fields: str | None = None,
-        external_id: str | None = None,
-        external_source: str | None = None,
-        order_by: str | None = None,
-    ) -> WorkItemDetail:
+    ) -> dict:
         """
         Retrieve a work item by ID.
 
@@ -169,27 +183,21 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             work_item_id: UUID of the work item
             expand: Comma-separated fields to expand (e.g., "assignees,labels,state")
             fields: Comma-separated fields to include in response
-            external_id: External system identifier for filtering
-            external_source: External system source name for filtering
-            order_by: Field to order results by (typically not used for single item retrieval)
 
         Returns:
-            WorkItemDetail object with expanded relationships
+            Work item dict with all fields
         """
-        client, workspace_slug = get_plane_client_context()
+        _, workspace_slug = get_plane_client_context()
 
-        params = RetrieveQueryParams(
-            expand=expand,
-            fields=fields,
-            external_id=external_id,
-            external_source=external_source,
-            order_by=order_by,
-        )
+        params: dict = {}
+        if expand:
+            params["expand"] = expand
+        if fields:
+            params["fields"] = fields
 
-        return client.work_items.retrieve(
-            workspace_slug=workspace_slug,
-            project_id=project_id,
-            work_item_id=work_item_id,
+        return fork_request(
+            "GET",
+            f"workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}",
             params=params,
         )
 
@@ -199,10 +207,7 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         issue_identifier: int,
         expand: str | None = None,
         fields: str | None = None,
-        external_id: str | None = None,
-        external_source: str | None = None,
-        order_by: str | None = None,
-    ) -> WorkItemDetail:
+    ) -> dict:
         """
         Retrieve a work item by project identifier and issue sequence number.
 
@@ -212,27 +217,21 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             issue_identifier: Issue sequence number (e.g., 1, 2, 3)
             expand: Comma-separated fields to expand (e.g., "assignees,labels,state")
             fields: Comma-separated list of fields to include in response
-            external_id: External system identifier for filtering
-            external_source: External system source name for filtering
-            order_by: Field to order results by (typically not used for single item retrieval)
 
         Returns:
-            WorkItemDetail object with expanded relationships
+            Work item dict with all fields
         """
-        client, workspace_slug = get_plane_client_context()
+        _, workspace_slug = get_plane_client_context()
 
-        params = RetrieveQueryParams(
-            expand=expand,
-            fields=fields,
-            external_id=external_id,
-            external_source=external_source,
-            order_by=order_by,
-        )
+        params: dict = {}
+        if expand:
+            params["expand"] = expand
+        if fields:
+            params["fields"] = fields
 
-        return client.work_items.retrieve_by_identifier(
-            workspace_slug=workspace_slug,
-            project_identifier=project_identifier,
-            issue_identifier=issue_identifier,
+        return fork_request(
+            "GET",
+            f"workspaces/{workspace_slug}/projects/{project_identifier}/work-items/{issue_identifier}",
             params=params,
         )
 
@@ -258,7 +257,7 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         state: str | None = None,
         estimate_point: str | None = None,
         type: str | None = None,
-    ) -> WorkItem:
+    ) -> dict:
         """
         Update a work item by ID.
 
@@ -286,41 +285,52 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             type: Work item type identifier
 
         Returns:
-            Updated WorkItem object
+            Updated work item dict
         """
-        client, workspace_slug = get_plane_client_context()
+        _, workspace_slug = get_plane_client_context()
 
-        # Validate priority against allowed literal values
-        validated_priority: PriorityEnum | None = (
-            priority if priority in get_args(PriorityEnum) else None  # type: ignore[assignment]
-        )
+        body: dict = {}
+        if name is not None:
+            body["name"] = name
+        if assignees is not None:
+            body["assignees"] = assignees
+        if labels is not None:
+            body["labels"] = labels
+        if type_id is not None:
+            body["type_id"] = type_id
+        if point is not None:
+            body["point"] = point
+        if description_html is not None:
+            body["description_html"] = description_html
+        if description_stripped is not None:
+            body["description_stripped"] = description_stripped
+        if priority is not None:
+            body["priority"] = priority
+        if start_date is not None:
+            body["start_date"] = start_date
+        if target_date is not None:
+            body["target_date"] = target_date
+        if sort_order is not None:
+            body["sort_order"] = sort_order
+        if is_draft is not None:
+            body["is_draft"] = is_draft
+        if external_source is not None:
+            body["external_source"] = external_source
+        if external_id is not None:
+            body["external_id"] = external_id
+        if parent is not None:
+            body["parent"] = parent
+        if state is not None:
+            body["state"] = state
+        if estimate_point is not None:
+            body["estimate_point"] = estimate_point
+        if type is not None:
+            body["type"] = type
 
-        data = UpdateWorkItem(
-            name=name,
-            assignees=assignees,
-            labels=labels,
-            type_id=type_id,
-            point=point,
-            description_html=description_html,
-            description_stripped=description_stripped,
-            priority=validated_priority,
-            start_date=start_date,
-            target_date=target_date,
-            sort_order=sort_order,
-            is_draft=is_draft,
-            external_source=external_source,
-            external_id=external_id,
-            parent=parent,
-            state=state,
-            estimate_point=estimate_point,
-            type=type,
-        )
-
-        return client.work_items.update(
-            workspace_slug=workspace_slug,
-            project_id=project_id,
-            work_item_id=work_item_id,
-            data=data,
+        return fork_request(
+            "PATCH",
+            f"workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}",
+            json=body,
         )
 
     @mcp.tool()
@@ -333,9 +343,10 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             project_id: UUID of the project
             work_item_id: UUID of the work item
         """
-        client, workspace_slug = get_plane_client_context()
-        client.work_items.delete(
-            workspace_slug=workspace_slug, project_id=project_id, work_item_id=work_item_id
+        _, workspace_slug = get_plane_client_context()
+        fork_request(
+            "DELETE",
+            f"workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}",
         )
 
     @mcp.tool()
@@ -343,10 +354,8 @@ def register_work_item_tools(mcp: FastMCP) -> None:
         query: str,
         expand: str | None = None,
         fields: str | None = None,
-        external_id: str | None = None,
-        external_source: str | None = None,
         order_by: str | None = None,
-    ) -> WorkItemSearch:
+    ) -> dict:
         """
         Search work items across a workspace.
 
@@ -356,21 +365,23 @@ def register_work_item_tools(mcp: FastMCP) -> None:
                     by name, description etc.
             expand: Comma-separated list of related fields to expand in response
             fields: Comma-separated list of fields to include in response
-            external_id: External system identifier for filtering
-            external_source: External system source name for filtering
             order_by: Field to order results by. Prefix with '-' for descending order
 
         Returns:
-            WorkItemSearch object containing search results
+            Search results dict
         """
-        client, workspace_slug = get_plane_client_context()
+        _, workspace_slug = get_plane_client_context()
 
-        params = RetrieveQueryParams(
-            expand=expand,
-            fields=fields,
-            external_id=external_id,
-            external_source=external_source,
-            order_by=order_by,
+        params: dict = {"q": query}
+        if expand:
+            params["expand"] = expand
+        if fields:
+            params["fields"] = fields
+        if order_by:
+            params["order_by"] = order_by
+
+        return fork_request(
+            "GET",
+            f"workspaces/{workspace_slug}/work-items/search",
+            params=params,
         )
-
-        return client.work_items.search(workspace_slug=workspace_slug, query=query, params=params)
