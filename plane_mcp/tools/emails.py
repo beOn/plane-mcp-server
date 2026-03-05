@@ -2,6 +2,7 @@
 
 from typing import Any
 
+import requests
 from fastmcp import FastMCP
 
 from plane_mcp.client import get_plane_client_context
@@ -63,12 +64,13 @@ def register_email_tools(mcp: FastMCP) -> None:
 
         Args:
             project_id: UUID of the project
-            issue_id: UUID of the issue
+            issue_id: UUID of the work item
 
         Returns:
             List of linked email objects (id, email_reference_id, subject, from_address, date, body_preview)
         """
         _, ws = get_plane_client_context()
+
         return fork_request(
             "GET",
             f"workspaces/{ws}/projects/{project_id}/issues/{issue_id}/linked-emails",
@@ -83,13 +85,14 @@ def register_email_tools(mcp: FastMCP) -> None:
 
         Args:
             project_id: UUID of the project
-            issue_id: UUID of the issue
+            issue_id: UUID of the work item
             email_reference_id: UUID of the email reference to link
 
         Returns:
             Link object with id, email_reference_id, and subject
         """
         _, ws = get_plane_client_context()
+
         return fork_request(
             "POST",
             f"workspaces/{ws}/projects/{project_id}/issues/{issue_id}/linked-emails",
@@ -105,10 +108,11 @@ def register_email_tools(mcp: FastMCP) -> None:
 
         Args:
             project_id: UUID of the project
-            issue_id: UUID of the issue
+            issue_id: UUID of the work item
             email_reference_id: UUID of the email reference to unlink
         """
         _, ws = get_plane_client_context()
+
         fork_request(
             "DELETE",
             f"workspaces/{ws}/projects/{project_id}/issues/{issue_id}/linked-emails",
@@ -124,13 +128,56 @@ def register_email_tools(mcp: FastMCP) -> None:
 
         Args:
             project_id: UUID of the project
-            issue_id: UUID of the issue
+            issue_id: UUID of the work item
 
         Returns:
             List of linked page objects (id, name, is_global, page_path, project_id, updated_at)
         """
         _, ws = get_plane_client_context()
+
         return fork_request(
             "GET",
             f"workspaces/{ws}/projects/{project_id}/issues/{issue_id}/linked-pages",
         )
+
+    @mcp.tool()
+    def bulk_link_emails_to_issue(
+        project_id: str,
+        issue_id: str,
+        email_reference_ids: list[str],
+    ) -> dict[str, Any]:
+        """
+        Link multiple emails to an issue in one call.
+
+        Processes each email sequentially and gracefully handles
+        already-linked emails (409 Conflict) instead of failing.
+
+        Args:
+            project_id: UUID of the project
+            issue_id: UUID of the work item
+            email_reference_ids: List of email reference UUIDs to link
+
+        Returns:
+            Summary dict with 'linked' (list of ref IDs successfully linked),
+            'already_linked' (list of ref IDs that were already linked),
+            and 'errors' (list of {id, error} for unexpected failures)
+        """
+        _, ws = get_plane_client_context()
+
+        url = f"workspaces/{ws}/projects/{project_id}/issues/{issue_id}/linked-emails"
+
+        results: dict[str, list] = {
+            "linked": [],
+            "already_linked": [],
+            "errors": [],
+        }
+        for ref_id in email_reference_ids:
+            try:
+                fork_request("POST", url, json={"email_reference_id": ref_id})
+                results["linked"].append(ref_id)
+            except requests.HTTPError as e:
+                if e.response is not None and e.response.status_code == 409:
+                    results["already_linked"].append(ref_id)
+                else:
+                    results["errors"].append({"id": ref_id, "error": str(e)})
+        return results

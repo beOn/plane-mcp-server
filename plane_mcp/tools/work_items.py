@@ -344,6 +344,7 @@ def register_work_item_tools(mcp: FastMCP) -> None:
             work_item_id: UUID of the work item
         """
         _, workspace_slug = get_plane_client_context()
+
         fork_request(
             "DELETE",
             f"workspaces/{workspace_slug}/projects/{project_id}/work-items/{work_item_id}",
