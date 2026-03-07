@@ -357,6 +357,89 @@ def register_specialized_tools(mcp: FastMCP) -> None:
         else:
             raise ValueError(f"Invalid info_type '{info_type}'. Must be: members")
 
+    # --- Batch operations ---
+
+    @mcp.tool()
+    def batch_update_resources(
+        updates: list[dict],
+    ) -> dict:
+        """Apply multiple updates in one tool call. Work items use a single
+        backend request; other resource types fall back to sequential calls.
+
+        Each entry in updates must have:
+            resource_type: str — e.g. "work_item", "label", "page"
+            resource_id: str — UUID of the resource
+            data: dict — fields to update (partial)
+            project_id: str | None — required for project-scoped resources
+            work_item_id: str | None — required for work-item-scoped resources
+
+        Returns:
+            {"succeeded": int, "failed": int, "errors": [{"resource_id": ..., "error": ...}]}
+        """
+        from plane_mcp.tools.registry import RESOURCES, resolve_path
+
+        _, ws = get_plane_client_context()
+        succeeded = 0
+        errors: list[dict] = []
+
+        # Group work_item updates by project for bulk endpoint
+        wi_by_project: dict[str, list[dict]] = {}
+        other_updates: list[dict] = []
+
+        for entry in updates:
+            if entry.get("resource_type") == "work_item" and entry.get("project_id"):
+                pid = entry["project_id"]
+                wi_by_project.setdefault(pid, []).append(entry)
+            else:
+                other_updates.append(entry)
+
+        # Bulk work item updates via backend endpoint (one HTTP call per project)
+        for project_id, entries in wi_by_project.items():
+            bulk_payload = []
+            for entry in entries:
+                item = dict(entry["data"])
+                item["id"] = entry["resource_id"]
+                bulk_payload.append(item)
+            try:
+                result = fork_request(
+                    "POST",
+                    f"workspaces/{ws}/projects/{project_id}/bulk-update-issues",
+                    json={"updates": bulk_payload},
+                )
+                succeeded += len(result.get("updated", []))
+                for rid, err in result.get("errors", {}).items():
+                    errors.append({"resource_id": rid, "error": err})
+            except Exception as e:
+                # If bulk endpoint fails entirely, fall back to sequential
+                for entry in entries:
+                    try:
+                        path = resolve_path("work_item", ws, project_id=project_id, resource_id=entry["resource_id"])
+                        fork_request("PATCH", path, json=entry["data"])
+                        succeeded += 1
+                    except Exception as inner_e:
+                        errors.append({"resource_id": entry["resource_id"], "error": str(inner_e)})
+
+        # Other resource types: sequential updates
+        for entry in other_updates:
+            resource_type = entry["resource_type"]
+            resource_id = entry["resource_id"]
+            data = entry["data"]
+            project_id = entry.get("project_id")
+            work_item_id = entry.get("work_item_id")
+
+            if resource_type not in RESOURCES:
+                errors.append({"resource_id": resource_id, "error": f"Unknown resource_type '{resource_type}'"})
+                continue
+
+            try:
+                path = resolve_path(resource_type, ws, project_id=project_id, work_item_id=work_item_id, resource_id=resource_id)
+                fork_request("PATCH", path, json=data)
+                succeeded += 1
+            except Exception as e:
+                errors.append({"resource_id": resource_id, "error": str(e)})
+
+        return {"succeeded": succeeded, "failed": len(errors), "errors": errors}
+
     # --- Current user ---
 
     @mcp.tool()
