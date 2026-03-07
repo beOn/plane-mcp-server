@@ -17,6 +17,7 @@ def register_email_tools(mcp: FastMCP) -> None:
         search: str | None = None,
         thread_id: str | None = None,
         folder: str | None = None,
+        untriaged: bool | None = None,
     ) -> list[dict[str, Any]]:
         """
         Search email references indexed in the workspace.
@@ -25,9 +26,10 @@ def register_email_tools(mcp: FastMCP) -> None:
             search: Search term (matches subject, from_address, to_addresses)
             thread_id: Filter by thread ID
             folder: Filter by folder (e.g., "INBOX", "Sent", "Archive")
+            untriaged: If True, only return emails where triaged_at is null
 
         Returns:
-            List of email reference objects (id, message_id, subject, from_address, date, body_preview, folder)
+            List of email reference objects (id, message_id, subject, from_address, date, body_preview, folder, triaged_at)
         """
         _, ws = get_plane_client_context()
         params = {}
@@ -37,6 +39,8 @@ def register_email_tools(mcp: FastMCP) -> None:
             params["thread_id"] = thread_id
         if folder:
             params["folder"] = folder
+        if untriaged:
+            params["untriaged"] = "true"
         return fork_request("GET", f"workspaces/{ws}/email-references", params=params)
 
     @mcp.tool()
@@ -139,6 +143,49 @@ def register_email_tools(mcp: FastMCP) -> None:
             "GET",
             f"workspaces/{ws}/projects/{project_id}/issues/{issue_id}/linked-pages",
         )
+
+    @mcp.tool()
+    def mark_email_triaged(email_reference_id: str) -> dict[str, Any]:
+        """
+        Mark an email reference as triaged (sets triaged_at to now).
+
+        Args:
+            email_reference_id: UUID of the email reference
+
+        Returns:
+            Updated email reference object
+        """
+        _, ws = get_plane_client_context()
+        return fork_request(
+            "PATCH",
+            f"workspaces/{ws}/email-references/{email_reference_id}",
+            json={},
+        )
+
+    @mcp.tool()
+    def mark_emails_triaged(email_reference_ids: list[str]) -> dict[str, Any]:
+        """
+        Mark multiple email references as triaged. Processes sequentially.
+
+        Args:
+            email_reference_ids: List of email reference UUIDs to mark as triaged
+
+        Returns:
+            Summary dict with 'triaged' (list of IDs marked) and 'errors' (list of {id, error})
+        """
+        _, ws = get_plane_client_context()
+        results: dict[str, list] = {"triaged": [], "errors": []}
+        for ref_id in email_reference_ids:
+            try:
+                fork_request(
+                    "PATCH",
+                    f"workspaces/{ws}/email-references/{ref_id}",
+                    json={},
+                )
+                results["triaged"].append(ref_id)
+            except requests.HTTPError as e:
+                results["errors"].append({"id": ref_id, "error": str(e)})
+        return results
 
     @mcp.tool()
     def bulk_link_emails_to_issue(
