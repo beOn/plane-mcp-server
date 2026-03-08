@@ -184,6 +184,41 @@ for data in emails:
 print(f'  {created} new, {EmailReference.objects.filter(workspace=ws).count()} total')
 " 2>/dev/null >&2
 
+# Seed issue type and issue template
+echo "==> Seeding issue type and template..." >&2
+$COMPOSE exec -T test-api python manage.py shell --settings=plane.settings.local -c "
+from plane.db.models import Workspace, IssueType, IssueTemplate
+
+ws = Workspace.objects.get(slug='test-workspace')
+
+issue_type, created = IssueType.objects.get_or_create(
+    workspace=ws,
+    name='Bug',
+    defaults={
+        'description': 'Bug report',
+        'is_active': True,
+        'is_default': True,
+    },
+)
+status = 'created' if created else 'exists'
+print(f'  Issue type: {status}')
+
+template, created = IssueTemplate.objects.get_or_create(
+    workspace=ws,
+    name='Bug Report Template',
+    defaults={
+        'description': 'Standard bug report',
+        'issue_type': issue_type,
+        'template_data': {
+            'description_html': '<p>Steps to reproduce:</p><ol><li></li></ol>',
+            'priority': 'medium',
+        },
+    },
+)
+status = 'created' if created else 'exists'
+print(f'  Issue template: {status}')
+" 2>/dev/null >&2
+
 echo "==> Test stack ready!" >&2
 echo "  URL:       http://localhost:18000" >&2
 echo "  Workspace: test-workspace" >&2
