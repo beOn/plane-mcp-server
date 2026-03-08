@@ -113,6 +113,10 @@ def register_crud_tools(mcp: FastMCP) -> None:
             work_item_id=work_item_id,
             type_id=type_id,
         )
+        # v1 serializers for cycles and modules require project_id in the body
+        # even though it's already in the URL path
+        if resource_type in ("cycle", "module") and project_id:
+            data = {**data, "project_id": project_id}
         return fork_request("POST", path, json=data)
 
     @mcp.tool()

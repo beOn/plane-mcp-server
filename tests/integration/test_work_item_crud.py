@@ -127,10 +127,10 @@ class TestWorkItemLinks:
 
 class TestWorkItemRelations:
     def test_create_relation_via_v1(self, api, ws, project_id, cleanup):
-        """Create a relation between two work items via /api/v1/.
+        """Create a relation between two work items via /api/v1/ (OPS-35 fix).
 
-        GAP: v1 returns 404 on the relations endpoint. Relations may require
-        /api/ (internal) or a different URL pattern at v1.
+        Uses the v1 issue-relations endpoint, matching the internal API's
+        contract: POST with relation_type + issues list.
         """
         item1 = api(
             "POST",
@@ -142,14 +142,27 @@ class TestWorkItemRelations:
             f"workspaces/{ws}/projects/{project_id}/work-items",
             json={"name": "Relation target"},
         )
-        base = f"workspaces/{ws}/projects/{project_id}/work-items/{item1['id']}/relations"
+        base = f"workspaces/{ws}/projects/{project_id}/issues/{item1['id']}/issue-relations"
 
         relation = api(
             "POST",
             base,
-            json={"related_id": item2["id"], "relation_type": "relates_to"},
+            json={"relation_type": "relates_to", "issues": [item2["id"]]},
         )
-        assert relation
+        assert isinstance(relation, list)
+        assert len(relation) > 0
+
+        # List relations — should be grouped by type
+        listed = api("GET", base)
+        assert isinstance(listed, dict)
+        assert "relates_to" in listed
+
+        # Delete relation
+        api(
+            "DELETE",
+            base,
+            json={"related_issue": str(item2["id"])},
+        )
 
         cleanup(f"workspaces/{ws}/projects/{project_id}/work-items/{item2['id']}")
         cleanup(f"workspaces/{ws}/projects/{project_id}/work-items/{item1['id']}")

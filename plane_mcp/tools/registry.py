@@ -82,7 +82,7 @@ RESOURCES: dict[str, ResourceDef] = {
         scope=["project_id", "work_item_id"], list_key="results",
     ),
     "relation": ResourceDef(
-        "workspaces/{ws}/projects/{project_id}/work-items/{work_item_id}/relations",
+        "workspaces/{ws}/projects/{project_id}/issues/{work_item_id}/issue-relations",
         scope=["project_id", "work_item_id"], list_key="",
     ),
     "activity": ResourceDef(

@@ -46,12 +46,13 @@ class TestStates:
 
 
 class TestCycles:
+    @pytest.mark.xfail(reason="v1 serializer requires project_id in body (OPS-34 fixed at MCP layer)")
     def test_cycle_create_without_project_in_body(self, api, ws, project_id, cleanup):
-        """GAP: Cycle create without 'project_id' in body returns 400.
+        """v1 API requires project_id in cycle create body.
 
-        The project_id is in the URL path, but the v1 serializer also requires
-        it in the JSON body as 'project_id'. This is a v1 API quirk — the MCP
-        server may need to inject project_id into the body automatically.
+        This raw API call fails (400) because the v1 serializer requires
+        project_id in the JSON body. The MCP server's create_resource tool
+        auto-injects it (OPS-34 fix), but this test exercises the raw API.
         """
         now = datetime.utcnow()
         cycle = api(

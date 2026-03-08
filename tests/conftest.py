@@ -25,12 +25,14 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "unit: pure logic tests, no API credentials needed")
     config.addinivalue_line("markers", "integration: tests that hit the real Plane API")
 
-    # Set defaults early so skipif markers evaluate correctly
+    # Set defaults early so skipif markers evaluate correctly.
+    # Default to local ephemeral test stack; override with env vars for production.
     if not os.getenv("PLANE_BASE_URL"):
-        os.environ["PLANE_BASE_URL"] = "https://ividemo.benacland.com"
+        os.environ["PLANE_BASE_URL"] = "http://localhost:18000"
     if not os.getenv("PLANE_WORKSPACE_SLUG"):
-        os.environ["PLANE_WORKSPACE_SLUG"] = "intervan"
+        os.environ["PLANE_WORKSPACE_SLUG"] = "test-workspace"
     if not os.getenv("PLANE_API_KEY"):
-        key = _keychain_get("intervan-plane", "plane-api-key")
+        # Try env-based key first (set by setup-test-env.sh), then Keychain
+        key = os.getenv("PLANE_TEST_API_KEY") or _keychain_get("intervan-plane", "plane-api-key")
         if key:
             os.environ["PLANE_API_KEY"] = key
