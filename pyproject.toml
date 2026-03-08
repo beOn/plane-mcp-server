@@ -53,3 +53,7 @@ ignore = []
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+markers = [
+    "unit: pure logic tests, no API credentials needed",
+    "integration: tests that hit the real Plane API",
+]
